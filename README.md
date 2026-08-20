@@ -1,124 +1,151 @@
-# Publicaciones automáticas en Instagram y Facebook
+# Publicaciones programadas para Instagram
 
-Programas una publicación con una hora ("el 21 de agosto a las 10:00") y se
-envía sola, sin que tengas que estar delante del computador. GitHub revisa la
-cola cada 15 minutos y publica lo que ya venció.
+Programas una publicación con su hora y el sistema se encarga a esa hora exacta,
+aunque tengas el celular apagado. Funciona en dos modos según cómo tengas la
+cuenta de Instagram.
 
-## Cómo se usa (el día a día)
+## Qué modo te toca
 
-1. Metes la foto en la carpeta `fotos/`.
-2. Programas la publicación:
+| Tu cuenta de Instagram | Qué es posible | Modo |
+| --- | --- | --- |
+| Privada (personal o profesional) | Solo aviso: te llega el texto y la foto y tú tocas publicar | `recordatorio` |
+| Pública personal | Instagram ya lo programa solo desde su propia app — **no necesitas este repo** | — |
+| Pública profesional (Creador o Empresa) | Publicación automática de verdad, sin tocar nada | `publicar` |
+
+**Las cuentas privadas no pueden publicar automáticamente.** No es una limitación
+de este código: la API de Meta no acepta cuentas privadas ni personales, y todas
+las apps del mercado (Buffer, Later, Metricool) usan esa misma API. Existen
+librerías no oficiales que simulan la app, pero violan los términos de Instagram
+y arriesgan el bloqueo de la cuenta; aquí no se usan.
+
+El modo se elige en `config.json` con la clave `modo`. Viene en `recordatorio`.
+
+---
+
+## Modo recordatorio (cuentas privadas)
+
+A la hora programada te llega una notificación al celular con el texto listo
+para copiar y la foto adjunta para descargar. Abres Instagram, pegas y publicas.
+
+### 1. Instala ntfy en el celular
+
+Busca **ntfy** en la App Store o Google Play. Es gratis y no pide registro.
+
+### 2. Inventa un tópico secreto
+
+El tópico es como un canal privado. **Cualquiera que adivine el nombre puede
+leer tus avisos**, así que no uses `linda` ni `mis-posts`: usa algo largo y
+aleatorio, por ejemplo `linda-ig-7f3a9c2b1e`.
+
+En la app de ntfy: **+** → escribe tu tópico → **Subscribe**.
+
+### 3. Guarda el tópico en GitHub
+
+En el repo: **Settings** → **Secrets and variables** → **Actions** →
+**New repository secret**
+
+- Name: `NTFY_TOPIC`
+- Secret: el tópico que inventaste
+
+### 4. Ajusta tu zona horaria
+
+En `config.json`, la clave `zona_horaria`. Viene en `America/Bogota`.
+Otras: `America/Mexico_City`, `America/Argentina/Buenos_Aires`, `Europe/Madrid`.
+
+### 5. Listo
+
+Programa tu primera publicación (ver abajo) y a la hora indicada suena el celular.
+
+---
+
+## Cómo programar una publicación
+
+### Con foto
+
+Primero sube la foto a la carpeta `fotos/` del repo (en GitHub: entra a la
+carpeta → **Add file** → **Upload files**; funciona también desde el celular).
+
+Después, desde la terminal:
 
 ```bash
 python -m programador programar \
-  --texto "Buenos días 🌞 #cafe" \
+  --texto "Buenos días desde la playa ☀️ #verano" \
   --cuando "2026-08-21 10:00" \
-  --imagen fotos/cafe.jpg \
-  --redes instagram,facebook
+  --imagen fotos/playa.jpg
 ```
 
-3. Haces `git add . && git commit -m "Programar post" && git push`.
-4. A las 10:00 se publica solo.
-
-Otros comandos:
+### Solo texto
 
 ```bash
-python -m programador lista               # ver lo que está en cola
-python -m programador lista --todas       # incluir lo ya publicado
-python -m programador publicar --simulacion   # ver qué se enviaría, sin enviar
+python -m programador programar --texto "Feliz lunes" --cuando "2026-08-24 09:00"
 ```
 
-Para un reel, usa `--tipo reel` y apunta `--imagen` a un archivo de video.
-Si la foto ya está subida en otro lado, usa `--imagen-url https://...` en vez
-de `--imagen`.
+### Ver la cola
 
-## Configuración inicial (una sola vez)
+```bash
+python -m programador lista          # lo que está pendiente
+python -m programador lista --todas  # incluye lo ya despachado
+```
 
-### 1. Cuentas
+### Probar sin enviar nada
 
-Instagram tiene que ser una cuenta **de empresa o de creador** (no personal) y
-estar **conectada a una página de Facebook**. Se cambia desde la app de
-Instagram: Configuración → Tipo de cuenta y herramientas. Sin esto la API de
-Meta no deja publicar; es un requisito de ellos, no del programa.
+```bash
+python -m programador ejecutar --simulacion
+```
 
-### 2. App de Meta y token
+La hora se escribe en **tu** zona horaria, la de `config.json`. Cada publicación
+queda como un archivo JSON en `programados/`; cuando se despacha pasa a
+`publicados/`. Si algo falla, la publicación se queda en la cola con el motivo
+anotado en `ultimo_error` y se reintenta en la siguiente pasada.
 
-1. Entra a https://developers.facebook.com/ y crea una app de tipo "Business".
-2. Añádele el producto **Instagram Graph API**.
-3. En el **Explorador de la API Graph**, elige tu app y tu página, y pide estos
-   permisos: `instagram_basic`, `instagram_content_publish`,
-   `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`.
-4. Genera el token y **conviértelo en token de larga duración** (los normales
-   caducan en una hora). En la herramienta "Access Token Debugger" verás el
-   botón para extenderlo a 60 días.
-5. Apunta también:
-   - **IG_USER_ID**: en el Explorador, consulta `me/accounts` y luego
-     `{id-de-tu-pagina}?fields=instagram_business_account`.
-   - **FB_PAGE_ID**: el id de tu página, sale en la misma consulta.
+---
 
-El token de 60 días hay que renovarlo cada dos meses. Ponte un recordatorio, o
-pídeme que te añada un aviso automático cuando esté por caducar.
+## Cómo se ejecuta solo
 
-### 3. Guardar las claves en GitHub
+`.github/workflows/publicar.yml` revisa la cola **cada 10 minutos** en los
+servidores de GitHub. No hace falta dejar la computadora encendida.
 
-En el repo: **Settings → Secrets and variables → Actions → New repository
-secret**. Crea tres:
+Dos cosas que conviene saber:
+
+- **Los cron de GitHub no son puntuales.** Cuando hay mucha carga pueden
+  retrasarse entre 5 y 15 minutos. Para un aviso de las 10:00 esto suele dar
+  igual; si necesitas precisión al minuto, no es la herramienta.
+- **GitHub apaga los workflows programados tras 60 días sin actividad** en el
+  repo. Si dejas de usarlo un par de meses, hay que reactivarlo desde la pestaña
+  Actions.
+
+También puedes lanzarlo a mano: pestaña **Actions** → *Publicaciones
+programadas* → **Run workflow**.
+
+---
+
+## Modo publicar (solo cuentas profesionales y públicas)
+
+Si algún día pasas la cuenta a Creador o Empresa **y la haces pública**, cambia
+`"modo": "publicar"` en `config.json` y añade estos secrets:
 
 | Secret | Qué es |
 | --- | --- |
-| `META_ACCESS_TOKEN` | El token de larga duración |
-| `IG_USER_ID` | Id de la cuenta de Instagram de empresa |
+| `META_ACCESS_TOKEN` | Token de acceso de larga duración de tu app de Meta |
+| `IG_USER_ID` | Id de tu cuenta profesional de Instagram |
 | `FB_PAGE_ID` | Id de la página de Facebook (solo si publicas también ahí) |
 
-Nunca escribas el token dentro de un archivo del repo: en los Secrets queda
-cifrado y no se ve en el código.
+Se sacan en [developers.facebook.com](https://developers.facebook.com): creas una
+app, añades el producto de Instagram y generas el token. Con cuenta de **Creador**
+ya no hace falta tener una página de Facebook conectada.
 
-### 4. Ajustar `config.json`
+En este modo las fotos se sirven desde `raw.githubusercontent.com`, así que
+**el repositorio tiene que ser público** para que los servidores de Meta puedan
+descargarlas. Si prefieres mantenerlo privado, usa `--imagen-url` con una foto
+alojada en otro sitio.
 
-```json
-{
-  "zona_horaria": "America/Bogota",
-  "repo": "lindazakaya1/claudenew",
-  "rama_fotos": "main",
-  "redes_por_defecto": ["instagram"]
-}
-```
+Soporta fotos y reels (`--tipo reel`), y publicar en Instagram y Facebook a la
+vez con `--redes instagram,facebook`.
 
-La `zona_horaria` es la que se usa cuando escribes "10:00" sin más. Cámbiala si
-no estás en Colombia (por ejemplo `Europe/Madrid`, `America/Mexico_City`).
-
-## Dos cosas importantes
-
-- **La automatización solo corre desde la rama principal.** GitHub ignora las
-  tareas programadas en otras ramas. Cuando fusiones esta rama a `main`, el
-  reloj empieza a andar; hasta entonces puedes probar a mano desde la pestaña
-  **Actions → Publicar en redes → Run workflow**.
-- **El repositorio tiene que ser público** para que las fotos de `fotos/`
-  funcionen. Instagram no acepta archivos subidos: exige una URL a la que sus
-  servidores puedan entrar, y aquí usamos la URL directa de GitHub. Si prefieres
-  el repo privado, sube las fotos a otro sitio y usa `--imagen-url`.
-
-## Cómo está hecho por dentro
-
-- `programados/` — cola: un archivo JSON por publicación pendiente.
-- `publicados/` — historial, con el id que devolvió cada red.
-- `programador/cola.py` — crear, listar, detectar vencidas, archivar.
-- `programador/meta.py` — llamadas a la Graph API de Meta.
-- `.github/workflows/publicar.yml` — el reloj: cada 15 minutos revisa la cola.
-
-Si una publicación falla, se queda en la cola con el motivo anotado en
-`ultimo_error` y se reintenta en la siguiente pasada.
+---
 
 ## Pruebas
 
 ```bash
 python -m unittest discover -s tests
 ```
-
-## Si prefieres no usar código
-
-Meta Business Suite (business.facebook.com) programa publicaciones de Instagram
-y Facebook gratis desde el navegador, sin tokens ni nada de esto. Es más simple
-si solo vas a programar de vez en cuando a mano. Este repo tiene sentido cuando
-quieres programar muchas de golpe, llevar el historial en git, o encadenarlo con
-otros procesos automáticos.

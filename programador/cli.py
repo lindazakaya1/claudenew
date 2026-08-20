@@ -4,7 +4,7 @@ import argparse
 import sys
 from datetime import datetime
 
-from . import cola, config, meta
+from . import cola, config, meta, recordatorio
 
 
 def _cmd_programar(args):
@@ -17,7 +17,8 @@ def _cmd_programar(args):
         tipo=args.tipo,
     )
     fecha = cola.parsear_fecha(pub["cuando"])
-    print(f"Programado para el {fecha:%d/%m/%Y a las %H:%M} ({fecha.tzname()})")
+    accion = "Te avisaré" if config.modo() == "recordatorio" else "Se publicará"
+    print(f"{accion} el {fecha:%d/%m/%Y a las %H:%M} ({fecha.tzname()})")
     print(f"Redes: {', '.join(pub['redes'])}")
     print(f"Archivo: {ruta.relative_to(config.RAIZ)}")
     return 0
@@ -37,45 +38,70 @@ def _cmd_lista(args):
                 print(f"      último error: {pub['ultimo_error']}")
 
     if args.todas:
-        publicadas = cola.listar(config.DIR_PUBLICADOS)
-        print(f"\n{len(publicadas)} ya publicada(s):\n")
-        for _, pub in publicadas:
+        hechas = cola.listar(config.DIR_PUBLICADOS)
+        print(f"\n{len(hechas)} ya despachada(s):\n")
+        for _, pub in hechas:
             fecha = cola.parsear_fecha(pub["cuando"])
             print(f"  {fecha:%d/%m/%Y %H:%M}  {pub['texto'][:50]}")
     return 0
 
 
-def _cmd_publicar(args):
+def _despachar(pub, credenciales):
+    """Ejecuta una publicación según el modo configurado."""
+    if config.modo() == "recordatorio":
+        return recordatorio.avisar(
+            pub,
+            credenciales["ntfy_topic"],
+            ruta_foto=cola.ruta_local_de_imagen(pub),
+            enlace=pub.get("imagen_url"),
+        )
+
+    url_media = cola.url_de_imagen(pub)
+    if not url_media:
+        raise ValueError("La publicación no tiene imagen y el modo es publicar")
+    return meta.publicar(pub, url_media, credenciales)
+
+
+def _cmd_ejecutar(args):
     ahora = datetime.now(config.zona_horaria())
     vencidas = cola.pendientes(ahora)
+    modo = config.modo()
+
     if not vencidas:
-        print(f"[{ahora:%d/%m %H:%M}] Nada que publicar por ahora.")
+        print(f"[{ahora:%d/%m %H:%M}] Nada pendiente por ahora.")
         return 0
 
     credenciales = config.credenciales()
-    if not args.simulacion and not credenciales["token"]:
-        print("Falta el secret META_ACCESS_TOKEN", file=sys.stderr)
-        return 1
+    if not args.simulacion:
+        falta = (
+            "NTFY_TOPIC" if modo == "recordatorio" and not credenciales["ntfy_topic"]
+            else "META_ACCESS_TOKEN" if modo == "publicar" and not credenciales["token"]
+            else None
+        )
+        if falta:
+            print(f"Falta el secret {falta}", file=sys.stderr)
+            return 1
 
     fallos = 0
     for ruta, pub in vencidas:
-        url_media = cola.url_de_imagen(pub)
         etiqueta = f"{pub['texto'][:40]!r} -> {', '.join(pub['redes'])}"
 
         if args.simulacion:
-            print(f"[simulación] Publicaría {etiqueta} con {url_media}")
+            verbo = "Avisaría de" if modo == "recordatorio" else "Publicaría"
+            print(f"[simulación] {verbo} {etiqueta}")
             continue
 
         try:
-            resultados = meta.publicar(pub, url_media, credenciales)
+            resultados = _despachar(pub, credenciales)
         except Exception as error:  # noqa: BLE001 - se anota y se sigue con las demás
             fallos += 1
             cola.marcar_error(ruta, pub, str(error))
-            print(f"ERROR al publicar {etiqueta}: {error}", file=sys.stderr)
+            print(f"ERROR con {etiqueta}: {error}", file=sys.stderr)
             continue
 
         cola.archivar(ruta, pub, resultados)
-        print(f"Publicado {etiqueta} ({resultados})")
+        verbo = "Recordatorio enviado" if modo == "recordatorio" else "Publicado"
+        print(f"{verbo}: {etiqueta} ({resultados})")
 
     return 1 if fallos else 0
 
@@ -83,7 +109,7 @@ def _cmd_publicar(args):
 def construir_parser():
     parser = argparse.ArgumentParser(
         prog="programador",
-        description="Programa publicaciones de Instagram y Facebook y las envía solas.",
+        description="Programa publicaciones de Instagram y te avisa (o las sube) a la hora exacta.",
     )
     sub = parser.add_subparsers(dest="comando", required=True)
 
@@ -101,16 +127,20 @@ def construir_parser():
     p.set_defaults(func=_cmd_programar)
 
     p = sub.add_parser("lista", help="Ver las publicaciones programadas")
-    p.add_argument("--todas", action="store_true", help="Incluir las ya publicadas")
+    p.add_argument("--todas", action="store_true", help="Incluir las ya despachadas")
     p.set_defaults(func=_cmd_lista)
 
-    p = sub.add_parser("publicar", help="Publicar todo lo que ya venció")
+    p = sub.add_parser(
+        "ejecutar",
+        aliases=["publicar"],
+        help="Despachar todo lo que ya venció (avisar o publicar según el modo)",
+    )
     p.add_argument(
         "--simulacion",
         action="store_true",
-        help="Mostrar qué se publicaría sin enviar nada",
+        help="Mostrar qué se haría sin enviar nada",
     )
-    p.set_defaults(func=_cmd_publicar)
+    p.set_defaults(func=_cmd_ejecutar)
 
     return parser
 

@@ -25,6 +25,15 @@ def zona_horaria():
     return ZoneInfo(cargar().get("zona_horaria", "UTC"))
 
 
+def modo():
+    """'recordatorio' avisa al celular; 'publicar' sube el post por la API.
+
+    El modo 'publicar' solo funciona con cuentas de Instagram profesionales
+    (Creador o Empresa) y públicas. Las cuentas privadas no lo admiten.
+    """
+    return cargar().get("modo", "recordatorio")
+
+
 def credenciales():
     """Lee las credenciales de Meta desde variables de entorno.
 
@@ -34,6 +43,7 @@ def credenciales():
         "token": os.environ.get("META_ACCESS_TOKEN", ""),
         "ig_user_id": os.environ.get("IG_USER_ID", ""),
         "fb_page_id": os.environ.get("FB_PAGE_ID", ""),
+        "ntfy_topic": os.environ.get("NTFY_TOPIC", ""),
     }
 
 

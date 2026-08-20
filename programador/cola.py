@@ -30,10 +30,10 @@ def parsear_fecha(cuando):
 
 def crear(texto, cuando, imagen=None, imagen_url=None, redes=None, tipo="imagen"):
     """Guarda una publicación programada y devuelve (ruta, publicacion)."""
-    if not imagen and not imagen_url:
-        raise ValueError("Hace falta --imagen (archivo del repo) o --imagen-url")
     if imagen and imagen_url:
         raise ValueError("Usa --imagen o --imagen-url, no las dos")
+    if not imagen and not imagen_url and config.modo() == "publicar":
+        raise ValueError("En modo publicar hace falta --imagen o --imagen-url")
 
     redes = [r.strip().lower() for r in (redes or config.cargar()["redes_por_defecto"])]
     desconocidas = [r for r in redes if r not in REDES_VALIDAS]
@@ -56,7 +56,7 @@ def crear(texto, cuando, imagen=None, imagen_url=None, redes=None, tipo="imagen"
     }
     if imagen:
         publicacion["imagen"] = str(imagen)
-    else:
+    elif imagen_url:
         publicacion["imagen_url"] = imagen_url
 
     config.DIR_PROGRAMADOS.mkdir(parents=True, exist_ok=True)
@@ -91,10 +91,19 @@ def pendientes(ahora=None):
 
 
 def url_de_imagen(publicacion):
-    """URL pública de la imagen/video, venga de un archivo del repo o de fuera."""
+    """URL pública de la imagen/video, o None si la publicación es solo texto."""
     if publicacion.get("imagen_url"):
         return publicacion["imagen_url"]
-    return config.url_publica_de_foto(publicacion["imagen"])
+    if publicacion.get("imagen"):
+        return config.url_publica_de_foto(publicacion["imagen"])
+    return None
+
+
+def ruta_local_de_imagen(publicacion):
+    """Ruta al archivo dentro del repo, o None si la foto vive fuera."""
+    if publicacion.get("imagen"):
+        return config.RAIZ / publicacion["imagen"]
+    return None
 
 
 def archivar(ruta, publicacion, resultados):
