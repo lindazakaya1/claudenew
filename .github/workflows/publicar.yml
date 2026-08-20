@@ -1,0 +1,55 @@
+name: Publicar en redes
+
+# GitHub revisa la cola cada 15 minutos y publica lo que ya venció.
+# Ojo: GitHub solo ejecuta programaciones desde la rama principal del repo.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      simulacion:
+        description: "Solo mostrar qué se publicaría, sin enviar nada"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publicar-redes
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Publicar lo que ya venció
+        env:
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+        run: |
+          python -m programador publicar \
+            ${{ inputs.simulacion && '--simulacion' || '' }}
+
+      - name: Guardar el estado de la cola
+        if: always()
+        run: |
+          if [ -z "$(git status --porcelain programados publicados)" ]; then
+            echo "Sin cambios en la cola."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add programados publicados
+          git commit -m "Actualizar cola de publicaciones"
+          git push
