@@ -49,8 +49,8 @@ En el repo: **Settings** → **Secrets and variables** → **Actions** →
 
 ### 4. Ajusta tu zona horaria
 
-En `config.json`, la clave `zona_horaria`. Viene en `America/Bogota`.
-Otras: `America/Mexico_City`, `America/Argentina/Buenos_Aires`, `Europe/Madrid`.
+En `config.json`, la clave `zona_horaria`. Está en `America/Panama`.
+Otras: `America/Bogota`, `America/Mexico_City`, `Europe/Madrid`.
 
 ### 5. Listo
 
