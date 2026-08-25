@@ -1,0 +1,76 @@
+name: Programar una publicación
+
+# Formulario para añadir publicaciones a la cola sin usar la terminal.
+# Se lanza desde la pestaña Actions, también desde el celular.
+
+on:
+  workflow_dispatch:
+    inputs:
+      texto:
+        description: "Texto de la publicación (el caption)"
+        required: true
+      cuando:
+        description: "Fecha y hora, formato AAAA-MM-DD HH:MM (ej: 2026-08-26 10:00)"
+        required: true
+      imagen:
+        description: "Foto de la carpeta fotos/ (ej: fotos/playa.jpg). Vacío = solo texto"
+        required: false
+        default: ""
+      redes:
+        description: "Dónde publicar"
+        required: false
+        default: "instagram"
+        type: choice
+        options:
+          - instagram
+          - facebook
+          - instagram,facebook
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cola-de-publicaciones
+  cancel-in-progress: false
+
+jobs:
+  programar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Añadir a la cola
+        # Los datos del formulario viajan como variables de entorno, nunca
+        # pegados dentro del comando: así un texto con comillas no rompe nada.
+        env:
+          TEXTO: ${{ inputs.texto }}
+          CUANDO: ${{ inputs.cuando }}
+          IMAGEN: ${{ inputs.imagen }}
+          REDES: ${{ inputs.redes }}
+        run: |
+          if [ -n "$IMAGEN" ]; then
+            python -m programador programar \
+              --texto "$TEXTO" --cuando "$CUANDO" --redes "$REDES" --imagen "$IMAGEN"
+          else
+            python -m programador programar \
+              --texto "$TEXTO" --cuando "$CUANDO" --redes "$REDES"
+          fi
+
+      - name: Guardar en el repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add programados
+          git commit -m "Programar publicación"
+          git pull --rebase origin "${{ github.ref_name }}"
+          git push origin HEAD:"${{ github.ref_name }}"
+
+      - name: Mostrar la cola
+        run: python -m programador lista

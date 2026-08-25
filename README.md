@@ -60,12 +60,16 @@ Programa tu primera publicación (ver abajo) y a la hora indicada suena el celul
 
 ## Cómo programar una publicación
 
-### Con foto
+### Desde la web (sin terminal)
 
-Primero sube la foto a la carpeta `fotos/` del repo (en GitHub: entra a la
-carpeta → **Add file** → **Upload files**; funciona también desde el celular).
+Pestaña **Actions** → *Programar una publicación* → **Run workflow**. Se abre un
+formulario con el texto, la fecha y la foto. Funciona igual desde el celular.
 
-Después, desde la terminal:
+Si la publicación lleva foto, súbela antes a la carpeta `fotos/` (botón
+**Add file** → **Upload files**) y en el formulario escribe la ruta completa,
+por ejemplo `fotos/playa.jpg`.
+
+### Desde la terminal, con foto
 
 ```bash
 python -m programador programar \
@@ -74,7 +78,7 @@ python -m programador programar \
   --imagen fotos/playa.jpg
 ```
 
-### Solo texto
+### Desde la terminal, solo texto
 
 ```bash
 python -m programador programar --texto "Feliz lunes" --cuando "2026-08-24 09:00"
