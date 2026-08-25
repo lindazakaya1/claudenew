@@ -1,12 +1,18 @@
 name: Publicaciones programadas
 
-# Revisa la cola cada 10 minutos y despacha lo que ya venció.
+# Revisa la cola cada media hora y despacha lo que ya venció.
 # GitHub ejecuta los cron en UTC, pero la hora de cada publicación se compara
 # usando la zona horaria de config.json, así que no hay que convertir nada.
+#
+# Por qué cada 30 minutos y no cada 10: en repositorios privados GitHub cobra
+# las ejecuciones y factura un minuto mínimo por cada una. Cada 10 minutos
+# serían unos 4.300 minutos al mes, muy por encima de los 2.000 gratuitos;
+# cada 30 son unos 1.440 y caben de sobra. Si el repositorio es público las
+# ejecuciones son ilimitadas y puedes bajarlo a "*/10 * * * *".
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions:

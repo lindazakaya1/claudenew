@@ -106,14 +106,32 @@ anotado en `ultimo_error` y se reintenta en la siguiente pasada.
 
 ## Cómo se ejecuta solo
 
-`.github/workflows/publicar.yml` revisa la cola **cada 10 minutos** en los
+`.github/workflows/publicar.yml` revisa la cola **cada 30 minutos** en los
 servidores de GitHub. No hace falta dejar la computadora encendida.
 
-Dos cosas que conviene saber:
+Programa las publicaciones **en punto o y media** (10:00, 10:30) y el aviso te
+llegará muy cerca de la hora. Si programas a las 10:07, el aviso saldrá en la
+pasada de las 10:30.
+
+### Público o privado, y cuánto cuesta
+
+| Repositorio | Ejecuciones | Tus fotos y textos |
+| --- | --- | --- |
+| Público | Gratis e ilimitadas, puedes revisar cada 10 min | **Los ve cualquiera en internet** |
+| Privado | 2.000 minutos gratis al mes; cada 30 min gasta ~1.440 | Solo los ves tú |
+
+GitHub factura **un minuto mínimo por ejecución**, aunque la pasada dure 20
+segundos. Por eso cada 10 minutos (unos 4.300 minutos al mes) no cabe en el
+plan gratuito de un repositorio privado, y cada 30 sí.
+
+Si el repositorio es público y no te importa que las fotos se vean, puedes
+cambiar el cron a `*/10 * * * *` en `publicar.yml`.
+
+Dos cosas más que conviene saber:
 
 - **Los cron de GitHub no son puntuales.** Cuando hay mucha carga pueden
-  retrasarse entre 5 y 15 minutos. Para un aviso de las 10:00 esto suele dar
-  igual; si necesitas precisión al minuto, no es la herramienta.
+  retrasarse entre 5 y 15 minutos más. Para un aviso de las 10:00 esto suele
+  dar igual; si necesitas precisión al minuto, no es la herramienta.
 - **GitHub apaga los workflows programados tras 60 días sin actividad** en el
   repo. Si dejas de usarlo un par de meses, hay que reactivarlo desde la pestaña
   Actions.
