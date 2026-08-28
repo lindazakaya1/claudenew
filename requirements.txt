@@ -1,1 +1,5 @@
 requests>=2.31.0
+
+# Opcional, solo para buscafotos: achica las fotos antes de mirarlas.
+# Sin esto el programa funciona igual, pero rechaza las fotos de más de 3,5 MB.
+pillow>=10.0.0

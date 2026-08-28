@@ -1,7 +1,7 @@
 {
-  "galeria": "https://macabeadaspty.pic-time.com",
+  "carpeta_local": "~/Descargas/Macabeadas",
   "carpetas": [],
-  "destino": "~/Descargas/fotos-macabeadas",
+  "destino": "~/Descargas/fotos-elegidas",
   "modelo": "claude-haiku-4-5-20251001",
   "cuantas": 5
 }

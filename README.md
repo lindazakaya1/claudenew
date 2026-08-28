@@ -171,3 +171,13 @@ vez con `--redes instagram,facebook`.
 ```bash
 python -m unittest discover -s tests
 ```
+
+---
+
+## Buscafotos (herramienta aparte)
+
+En la carpeta `buscafotos/` hay algo distinto y sin relación con Instagram:
+un buscador de fotos por lo que se ve en ellas. Le pides «antorcha» o «niño
+sonriendo» y te copia esas fotos a una carpeta de tu computadora.
+
+Las instrucciones están en [`buscafotos/README.md`](buscafotos/README.md).
