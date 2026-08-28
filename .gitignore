@@ -3,3 +3,6 @@ __pycache__/
 .env
 .venv/
 venv/
+
+# La llave de la API no se sube nunca
+buscafotos/clave.txt

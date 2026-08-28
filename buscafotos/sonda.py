@@ -44,10 +44,12 @@ def titulo(t):
 
 
 PATRONES = {
-    "portafolio": r"""["'`][^"'`]{0,60}portfolio[^"'`]{0,60}["'`]""",
-    "ruta datos": r"""["'`][^"'`]*(?:accounts?|pictures)/[^"'`]{0,80}["'`]""",
-    "json": r""".{90}\.json""",
-    "ajaxStatic": r""".{50}ajaxStatic.{90}""",
+    "galleryDTO": r""".{60}galleryDTO.{200}""",
+    "baseCdnUrl": r""".{80}[Bb]aseCdnUrl.{160}""",
+    "publicUrl": r""".{80}publicUrl["'\]:,].{140}""",
+    "plantilla portafolio": r"""[a-zA-Z]+:\s*[^,;]{0,40}["'`][^"'`]{0,120}portfolio[^"'`]{0,120}["'`]""",
+    "getProjectUrls": r"""getProjectUrls\s*[=:]\s*function[^)]{0,80}\)\{.{0,400}""",
+    "getUrls": r"""getUrls\s*[=:].{0,300}""",
 }
 
 
@@ -68,7 +70,7 @@ def revisar_script(url):
                 continue
             vistos.add(trozo)
             print("  [" + nombre + "] " + trozo[:200])
-            if len(vistos) >= 15:
+            if len(vistos) >= 8:
                 break
 
 
