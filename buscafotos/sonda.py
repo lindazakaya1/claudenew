@@ -61,10 +61,8 @@ def main():
     _, _, datos = traer(guion)
     codigo = datos.decode("utf-8", "replace")
     for patron in (
-        r"accountPublicBaseCdnUrl\s*[:=].{0,500}",
-        r"accountPublicPath\s*[:=].{0,400}",
-        r".{300}accountBaseCdnUrl\s*:.{200}",
-        r"function\s+\w*[Aa]ccountUrls?\w*\([^)]*\)\{.{0,700}",
+        r".{1400}accountPublicBaseCdnUrl\s*:",
+        r".{700}getProjectUrls.{300}",
     ):
         vistos = set()
         for c in re.finditer(patron, codigo):
@@ -72,8 +70,8 @@ def main():
             if trozo in vistos:
                 continue
             vistos.add(trozo)
-            print("\n  >> " + trozo[:600])
-            if len(vistos) >= 3:
+            print("\n  >> " + trozo[:1500])
+            if len(vistos) >= 1:
                 break
 
 
