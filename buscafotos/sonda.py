@@ -56,53 +56,25 @@ def main():
     ts = parametros["portfolioTS"]
     print(f"cdn={cdn}\ntoken={token}\nportfolioId={pid}\nts={ts}")
 
-    titulo("Cómo se arma la ruta de la cuenta (accountdata)")
+    titulo("Cómo se arman las rutas de la cuenta")
     guion = re.search(r'src="([^"]+artgallery_base[^"]*)"', pagina).group(1)
     _, _, datos = traer(guion)
     codigo = datos.decode("utf-8", "replace")
-    vistos = set()
-    for c in re.finditer(r".{170}accountdata.{170}", codigo):
-        trozo = " ".join(c.group(0).split())
-        if trozo in vistos:
-            continue
-        vistos.add(trozo)
-        print("  " + trozo)
-        if len(vistos) >= 6:
-            break
-
-    titulo("Probando direcciones del portafolio")
-    bases = []
-    for dominio in (cdn, datos_dom):
-        for carpeta in ("accountdata", "accountdatapublic", "accounts"):
-            for sufijo in ("", "pub", "/pub", "public"):
-                bases.append(f"{dominio}/pictures/{carpeta}/{token}{sufijo}")
-    encontrada = None
-    for b in bases:
-        url = f"{b}/client/{pid}/portfolio.json.txt?ts={ts}"
-        try:
-            estado, cabeceras, cuerpo = traer(url)
-        except urllib.error.HTTPError as e:
-            continue
-        except Exception:  # noqa: BLE001
-            continue
-        print(f"\n¡ENCONTRADA!  {estado}  {url}")
-        print(f"  [{cabeceras.get('Content-Type')}] {len(cuerpo)} bytes")
-        encontrada = cuerpo
-        break
-
-    if encontrada is None:
-        print("Ninguna funcionó. Bases probadas:")
-        for b in bases:
-            print("  " + b)
-        return
-
-    titulo("Contenido del portafolio")
-    portafolio = json.loads(encontrada.decode("utf-8", "replace"))
-    print("claves: " + ", ".join(portafolio.keys()))
-    proyectos = portafolio.get("projects", [])
-    print(f"\n{len(proyectos)} proyecto(s):")
-    for p in proyectos:
-        print("  " + json.dumps(p, ensure_ascii=False)[:400])
+    for patron in (
+        r"accountPublicBaseCdnUrl\s*[:=].{0,500}",
+        r"accountPublicPath\s*[:=].{0,400}",
+        r".{300}accountBaseCdnUrl\s*:.{200}",
+        r"function\s+\w*[Aa]ccountUrls?\w*\([^)]*\)\{.{0,700}",
+    ):
+        vistos = set()
+        for c in re.finditer(patron, codigo):
+            trozo = " ".join(c.group(0).split())
+            if trozo in vistos:
+                continue
+            vistos.add(trozo)
+            print("\n  >> " + trozo[:600])
+            if len(vistos) >= 3:
+                break
 
 
 if __name__ == "__main__":
