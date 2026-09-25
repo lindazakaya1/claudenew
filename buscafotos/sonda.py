@@ -78,13 +78,61 @@ def main():
     codigo = datos.decode("utf-8", "replace")
     print("  artgallery_base.js: " + str(len(codigo)) + " caracteres")
 
-    for aguja in ("accountPublicBaseCdnUrl:", "accountPublicPath:", "/pictures/accountdata/"):
-        titulo("Contexto de  " + aguja)
-        trozos = contexto(codigo, aguja, antes=1800, despues=400, maximo=1)
-        if not trozos:
-            print("  (no aparece)")
-        for t in trozos:
-            print(" ".join(t.split()))
+    titulo("Definición de ma() — convierte el id de cuenta en carpeta")
+    for aguja in ("function ma(", "ma=function(", "function ma (", 'ma(b,"account")'):
+        for trozo in contexto(codigo, aguja, antes=60, despues=700, maximo=1):
+            print("\n  >> " + " ".join(trozo.split()))
+
+    titulo("Probando la dirección del portafolio")
+    cdn = propio["cdnDomain"]
+    cuenta = parametros["accountId"] if "accountId" in parametros else 518023
+    pid = parametros["portfolioId"]
+    ts = parametros["portfolioTS"]
+
+    def base36(n):
+        alfabeto = "0123456789abcdefghijklmnopqrstuvwxyz"
+        s = ""
+        while n:
+            n, resto = divmod(n, 36)
+            s = alfabeto[resto] + s
+        return s or "0"
+
+    candidatos = [
+        str(cuenta),
+        "a" + str(cuenta),
+        base36(cuenta),
+        "a" + base36(cuenta),
+        f"{cuenta % 100}/{cuenta}",
+        f"{cuenta % 1000}/{cuenta}",
+        f"{str(cuenta)[:3]}/{cuenta}",
+        f"{str(cuenta)[-2:]}/{cuenta}",
+        f"account{cuenta}",
+        f"{cuenta}/account",
+    ]
+    for seg in candidatos:
+        url = f"{cdn}/pictures/accountdata/{seg}/client/{pid}/portfolio.json.txt?ts={ts}"
+        try:
+            estado, cab, datos = traer(url)
+        except urllib.error.HTTPError as e:
+            print(f"  {e.code}  .../accountdata/{seg}/...")
+            continue
+        except Exception as e:  # noqa: BLE001
+            print(f"  ERR  {seg}: {e}")
+            continue
+        print(f"\n  ¡ENCONTRADA!  {estado}  {url}")
+        texto = datos.decode("utf-8", "replace")
+        print(f"  {len(datos)} bytes  [{cab.get('Content-Type')}]")
+        try:
+            portafolio = json.loads(texto)
+            print("  claves: " + ", ".join(list(portafolio)[:20]))
+            proyectos = portafolio.get("projects", [])
+            print(f"\n  {len(proyectos)} proyecto(s):")
+            for pr in proyectos:
+                print("    " + json.dumps(pr, ensure_ascii=False)[:300])
+        except Exception as e:  # noqa: BLE001
+            print("  no es JSON: " + texto[:400])
+        return
+    print("\n  Ninguna funcionó.")
 
 
 if __name__ == "__main__":
