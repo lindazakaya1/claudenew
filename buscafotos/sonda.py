@@ -1,6 +1,7 @@
-"""Sonda: resuelve cómo arma Pic-Time la dirección del JSON del portafolio.
+"""Sonda: lee el portafolio de Pic-Time y muestra su estructura.
 
-No descarga fotos. Es una herramienta de investigación, temporal.
+Ya se sabe cómo se arma la dirección; falta entender el formato, que no es
+JSON con claves sino arreglos posicionales.
 """
 
 import gzip
@@ -13,10 +14,8 @@ import urllib.parse
 import urllib.request
 import zlib
 
-UA = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-)
+UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
 
 
 def traer(url):
@@ -40,20 +39,23 @@ def titulo(t):
     print("\n" + "=" * 66 + "\n" + t + "\n" + "=" * 66, flush=True)
 
 
-def contexto(codigo, aguja, antes=1800, despues=400, maximo=2):
-    """Trozos de código alrededor de una palabra, por posición, no por regex.
-
-    Buscar por índice en vez de con una expresión regular evita que el motor
-    se atragante con los 700 KB del script minificado.
-    """
-    salidas, desde, encontrados = [], 0, 0
-    while encontrados < maximo:
-        i = codigo.find(aguja, desde)
-        if i < 0:
-            break
-        salidas.append(codigo[max(0, i - antes): i + despues])
-        desde = i + len(aguja)
-        encontrados += 1
+def arbol(nodo, ruta="", profundidad=0, limite=6, salidas=None):
+    """Recorre los arreglos anidados e imprime dónde vive cada dato."""
+    if salidas is None:
+        salidas = []
+    sangria = "  " * profundidad
+    if isinstance(nodo, list):
+        salidas.append(f"{sangria}{ruta}: lista de {len(nodo)}")
+        if profundidad < limite:
+            for i, hijo in enumerate(nodo):
+                arbol(hijo, f"[{i}]", profundidad + 1, limite, salidas)
+    elif isinstance(nodo, dict):
+        salidas.append(f"{sangria}{ruta}: objeto con {len(nodo)} claves -> "
+                       + ", ".join(list(nodo)[:12]))
+    elif isinstance(nodo, str) and nodo:
+        salidas.append(f"{sangria}{ruta}: TEXTO {nodo[:70]!r}")
+    elif isinstance(nodo, (int, float)) and nodo:
+        salidas.append(f"{sangria}{ruta}: {nodo}")
     return salidas
 
 
@@ -61,78 +63,48 @@ def main():
     base = (sys.argv[1] if len(sys.argv) > 1 else "https://macabeadaspty.pic-time.com").rstrip("/")
     _, _, cuerpo = traer(base + "/portfolio")
     pagina = cuerpo.decode("utf-8", "replace")
-
-    parametros = json.loads(re.search(r"var initParams = (\{.*?\});", pagina, re.S).group(1))
+    par = json.loads(re.search(r"var initParams = (\{.*?\});", pagina, re.S).group(1))
     mapa = {e["storageId"]: e for e in json.loads(
         re.search(r"_pictimeStorageMapping = (\[.*?\]);", pagina, re.S).group(1))}
-    propio = mapa[parametros["accountStorageId"]]
+    cdn = mapa[par["accountStorageId"]]["cdnDomain"]
 
-    titulo("Datos de la cuenta")
-    for clave in ("accountStorageId", "accountPathToken", "portfolioId", "portfolioTS", "storeId"):
-        print("  " + clave + " = " + repr(parametros.get(clave)))
-    print("  cdnDomain  = " + propio["cdnDomain"])
-    print("  dataDomain = " + propio["dataDomain"])
+    # La ruta de la cuenta: los primeros tres dígitos del id hacen de carpeta.
+    cuenta = par["accountId"]
+    trozo = f"{str(cuenta)[:3]}/{cuenta}"
+    url = (f"{cdn}/pictures/accountdata/{trozo}/client/"
+           f"{par['portfolioId']}/portfolio.json.txt?ts={par['portfolioTS']}")
 
-    guion = re.search(r'src="([^"]+artgallery_base[^"]*)"', pagina).group(1)
-    _, _, datos = traer(guion)
-    codigo = datos.decode("utf-8", "replace")
-    print("  artgallery_base.js: " + str(len(codigo)) + " caracteres")
+    titulo("Portafolio")
+    print("  " + url)
+    estado, _, datos = traer(url)
+    texto = datos.decode("utf-8", "replace")
+    print(f"  {estado} · {len(datos)} bytes")
 
-    titulo("Definición de ma() — convierte el id de cuenta en carpeta")
-    for aguja in ("function ma(", "ma=function(", "function ma (", 'ma(b,"account")'):
-        for trozo in contexto(codigo, aguja, antes=60, despues=700, maximo=1):
-            print("\n  >> " + " ".join(trozo.split()))
+    portafolio = json.loads(texto)
 
-    titulo("Probando la dirección del portafolio")
-    cdn = propio["cdnDomain"]
-    cuenta = parametros["accountId"] if "accountId" in parametros else 518023
-    pid = parametros["portfolioId"]
-    ts = parametros["portfolioTS"]
-
-    def base36(n):
-        alfabeto = "0123456789abcdefghijklmnopqrstuvwxyz"
-        s = ""
-        while n:
-            n, resto = divmod(n, 36)
-            s = alfabeto[resto] + s
-        return s or "0"
-
-    candidatos = [
-        str(cuenta),
-        "a" + str(cuenta),
-        base36(cuenta),
-        "a" + base36(cuenta),
-        f"{cuenta % 100}/{cuenta}",
-        f"{cuenta % 1000}/{cuenta}",
-        f"{str(cuenta)[:3]}/{cuenta}",
-        f"{str(cuenta)[-2:]}/{cuenta}",
-        f"account{cuenta}",
-        f"{cuenta}/account",
-    ]
-    for seg in candidatos:
-        url = f"{cdn}/pictures/accountdata/{seg}/client/{pid}/portfolio.json.txt?ts={ts}"
-        try:
-            estado, cab, datos = traer(url)
-        except urllib.error.HTTPError as e:
-            print(f"  {e.code}  .../accountdata/{seg}/...")
+    titulo("Textos que contiene (nombres de carpetas y rutas)")
+    def textos(nodo, ruta=""):
+        if isinstance(nodo, list):
+            for i, h in enumerate(nodo):
+                yield from textos(h, f"{ruta}[{i}]")
+        elif isinstance(nodo, dict):
+            for k, v in nodo.items():
+                yield from textos(v, f"{ruta}.{k}")
+        elif isinstance(nodo, str) and 1 < len(nodo) < 90 and not nodo.startswith("#"):
+            yield ruta, nodo
+    vistos = set()
+    for ruta, valor in textos(portafolio):
+        if valor in vistos or valor.startswith("_PT_"):
             continue
-        except Exception as e:  # noqa: BLE001
-            print(f"  ERR  {seg}: {e}")
-            continue
-        print(f"\n  ¡ENCONTRADA!  {estado}  {url}")
-        texto = datos.decode("utf-8", "replace")
-        print(f"  {len(datos)} bytes  [{cab.get('Content-Type')}]")
-        try:
-            portafolio = json.loads(texto)
-            print("  claves: " + ", ".join(list(portafolio)[:20]))
-            proyectos = portafolio.get("projects", [])
-            print(f"\n  {len(proyectos)} proyecto(s):")
-            for pr in proyectos:
-                print("    " + json.dumps(pr, ensure_ascii=False)[:300])
-        except Exception as e:  # noqa: BLE001
-            print("  no es JSON: " + texto[:400])
-        return
-    print("\n  Ninguna funcionó.")
+        vistos.add(valor)
+        print(f"  {ruta} = {valor!r}")
+        if len(vistos) > 120:
+            print("  (recortado)")
+            break
+
+    titulo("Forma del árbol")
+    for linea in arbol(portafolio, "raiz", limite=5)[:90]:
+        print("  " + linea)
 
 
 if __name__ == "__main__":
