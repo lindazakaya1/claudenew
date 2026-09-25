@@ -64,45 +64,26 @@ def main():
         c = p[1]
         print(f"  {i:>3}. {c[0]}  {c[1]}   ->  {c[2]}")
 
-    # Se toma una carpeta para descubrir cómo se piden sus fotos.
-    muestra = proyectos[0][1]
-    titulo(f"Página de la carpeta «{muestra[1]}»")
+    # Se toma una carpeta de las juveniles para ver cómo se piden sus fotos.
+    # Su página no trae initParams: es otro tipo de página y usa otras variables.
+    muestra = next(p[1] for p in proyectos if "Juveniles" in p[1][1])
+    titulo(f"Página de la carpeta «{muestra[1]}»  ->  /{muestra[2]}")
     _, _, cuerpo2 = traer(f"{base}/{muestra[2]}")
     pagina2 = cuerpo2.decode("utf-8", "replace")
-    par2 = parametros_de(pagina2)
-    for k, v in par2.items():
-        if k != "hostingInfo" and not isinstance(v, (dict, list)):
-            print(f"  {k} = {v!r}")
+    print(f"  {len(pagina2)} caracteres")
 
-    titulo("Probando la dirección de las fotos")
-    pid = par2.get("projectId") or muestra[0]
-    alm = par2.get("projectStorageId", par2.get("storageId", par["accountStorageId"]))
-    token = par2.get("projectPathToken", par2.get("pathToken", ""))
-    ts = par2.get("galleryTS", par2.get("timeStamp", par2.get("projectTS", "")))
-    cdn_proy = mapa.get(alm, mapa[par["accountStorageId"]])["cdnDomain"]
-    print(f"  projectId={pid} storageId={alm} pathToken={token!r} ts={ts!r}")
+    print("\n  Variables declaradas en la página:")
+    for m in re.finditer(r"\b(?:var|const|let)\s+(_?[A-Za-z_$][\w$]*)\s*=\s*([^;\n]{0,400})", pagina2):
+        nombre, valor = m.group(1), m.group(2).strip()
+        if len(valor) > 20 or valor[:1] in "[{\"'":
+            print(f"    {nombre} = {valor[:320]}")
 
-    rutas = [
-        f"/pictures/projectdata/{troceado(pid)}",
-        f"/pictures/projectdata/{troceado(pid)}/{token}" if token else None,
-        f"/pictures/projects/{troceado(pid)}",
-    ]
-    for ruta in filter(None, rutas):
-        for nombre in ("gallery.json.txt", "publicphotos.json.txt"):
-            u = f"{cdn_proy}{ruta}/{nombre}" + (f"?ts={ts}" if ts else "")
-            try:
-                estado, cab, d = traer(u)
-            except urllib.error.HTTPError as e:
-                print(f"  {e.code}  {ruta}/{nombre}")
-                continue
-            except Exception as e:  # noqa: BLE001
-                print(f"  ERR  {ruta}/{nombre}: {e}")
-                continue
-            print(f"\n  ¡ENCONTRADA!  {estado}  {u}")
-            print(f"  {len(d)} bytes  [{cab.get('Content-Type')}]")
-            print("  " + d.decode("utf-8", "replace")[:1200])
-            return
-    print("\n  Ninguna funcionó.")
+    print("\n  Números largos que podrían ser el id del proyecto:")
+    print("    " + ", ".join(sorted(set(re.findall(r"\b5\d{7}\b", pagina2)))[:15]))
+
+    print("\n  Rutas de datos que aparecen:")
+    for r in sorted(set(re.findall(r"/pictures/[a-z]+data/[\w/]+", pagina2)))[:10]:
+        print("    " + r)
 
 
 if __name__ == "__main__":
