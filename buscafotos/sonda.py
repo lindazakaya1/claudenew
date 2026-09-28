@@ -1,8 +1,9 @@
-"""Sonda: lee la función que arma las rutas de un proyecto en Pic-Time.
+"""Sonda: lee cómo Pic-Time arma projectPath.
 
-Ya está resuelto el troceo de los identificadores (ver `troceado`), pero la
-carpeta base de los proyectos no es `projectdata`. Esta sonda saca el cuerpo
-de getProjectUrls y las plantillas de las fotos, que es donde está escrito.
+Las plantillas de foto son "[projectBaseCdnUrl][projectPath]/thumbs/[fileName]",
+así que lo único que falta es projectPath. Se busca dónde la función lo
+devuelve y se lee el código de antes, que es la misma técnica que sirvió
+para resolver la ruta de la cuenta.
 """
 
 import gzip
@@ -38,11 +39,6 @@ def titulo(t):
     print("\n" + "=" * 60 + "\n" + t + "\n" + "=" * 60, flush=True)
 
 
-def desde(codigo, aguja, largo):
-    i = codigo.find(aguja)
-    return " ".join(codigo[i:i + largo].split()) if i >= 0 else None
-
-
 def main():
     base = (sys.argv[1] if len(sys.argv) > 1 else "https://macabeadaspty.pic-time.com").rstrip("/")
     _, _, cuerpo = traer(base + "/portfolio")
@@ -51,22 +47,31 @@ def main():
     _, _, datos = traer(guion)
     codigo = datos.decode("utf-8", "replace")
 
-    titulo("getProjectUrls: cómo arma projectPath y publicPath")
-    t = desde(codigo, 'galleryTS=="notready"', 2600)
-    print("  " + (t or "(no encontrado)"))
+    # Se busca por posición, no con expresiones regulares: el archivo pesa
+    # cientos de miles de caracteres y así no hay sorpresas de coincidencia.
+    titulo("Antes de donde se devuelve projectPath")
+    i = codigo.find("projectPath:")
+    if i < 0:
+        print("  (projectPath: no aparece)")
+    else:
+        print("  " + " ".join(codigo[max(0, i - 2000): i + 300].split()))
 
-    titulo("Plantillas de las fotos")
+    titulo("Rutas literales que contienen 'project'")
     vistos = set()
-    for m in re.finditer(r"\w*ResolutionPhoto[\"']?\s*:\s*[\"'`][^\"'`]{0,150}[\"'`]", codigo):
-        s = " ".join(m.group(0).split())
+    for m in re.finditer(r"/pictures/[A-Za-z]*project[A-Za-z]*", codigo):
+        s = m.group(0)
         if s not in vistos:
             vistos.add(s)
             print("  " + s)
-        if len(vistos) >= 8:
-            break
-    if not vistos:
-        for m in re.finditer(r".{80}ResolutionPhoto.{170}", codigo):
-            print("  " + " ".join(m.group(0).split()))
+
+    titulo("Plantillas con backtick que mencionan pictures")
+    vistos = set()
+    for m in re.finditer(r"`/pictures/[^`]{0,90}`", codigo):
+        s = m.group(0)
+        if s not in vistos:
+            vistos.add(s)
+            print("  " + s)
+        if len(vistos) >= 14:
             break
 
 
