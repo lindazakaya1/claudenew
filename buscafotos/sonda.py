@@ -1,6 +1,8 @@
-"""Sonda: encuentra por qué dirección se piden las fotos de una carpeta.
+"""Sonda: saca la lista de fotos de una carpeta de la galería.
 
-No descarga fotos. Es una herramienta de investigación, temporal.
+La página de una carpeta vive en /-{ruta} y trae sus propios initParams.
+De ahí salen el id del proyecto, su almacenamiento y su token, que es lo
+que hace falta para pedir el JSON con las fotos.
 """
 
 import gzip
@@ -56,54 +58,63 @@ def main():
            f"{par['portfolioId']}/portfolio.json.txt?ts={par['portfolioTS']}")
     _, _, datos = traer(url)
     proyectos = json.loads(datos.decode("utf-8", "replace"))[1][3]
-
     juveniles = [p[1] for p in proyectos if "Juveniles" in p[1][1]]
-    print(f"{len(proyectos)} carpetas en total, {len(juveniles)} juveniles")
 
     muestra = juveniles[0]
-    ruta = muestra[2]
-    titulo(f"Buscando la pagina de «{muestra[1]}»  (id {muestra[0]})")
+    titulo(f"Carpeta «{muestra[1]}»  ->  /-{muestra[2]}")
+    _, _, c = traer(f"{base}/-{muestra[2]}")
+    html = c.decode("utf-8", "replace")
+    par2 = json.loads(re.search(r"initParams = (\{.*?\});", html, re.S).group(1))
 
-    formas = [
-        f"/{ruta}",
-        f"/-{ruta}",
-        f"/client/{ruta}",
-        f"/art/{ruta}",
-        f"/-_projects_{muestra[0]}",
-        f"/client/{muestra[0]}",
-        f"/gallery/{ruta}",
-    ]
-    buena = None
-    for forma in formas:
-        try:
-            estado, _, c = traer(base + forma)
-        except urllib.error.HTTPError as e:
-            print(f"  {e.code:>3}  {forma}")
-            continue
-        except Exception as e:  # noqa: BLE001
-            print(f"  ERR  {forma}: {e}")
-            continue
-        html = c.decode("utf-8", "replace")
-        m = re.search(r"<title[^>]*>(.*?)</title>", html, re.S | re.I)
-        nombre_pagina = m.group(1).strip()[:50] if m else "(sin titulo)"
-        marca = "   <== ESTA" if len(html) > 5000 else ""
-        print(f"  {estado:>3}  {forma:<42} {len(html):>7} car.  {nombre_pagina}{marca}")
-        if len(html) > 5000 and buena is None:
-            buena = (forma, html)
+    print("  Parametros de la carpeta:")
+    for clave, valor in sorted(par2.items()):
+        if not isinstance(valor, (dict, list)):
+            print(f"    {clave} = {valor!r}")
 
-    if not buena:
-        titulo("Ninguna forma dio una pagina real")
-        print("  Respuesta de la primera, para ver que dice:")
-        _, _, c = traer(base + formas[0])
-        print(c.decode("utf-8", "replace")[:1500])
-        return
+    titulo("Probando la direccion del JSON de fotos")
+    pid = (par2.get("projectId") or par2.get("baseProjectId")
+           or par2.get("prjId") or muestra[0])
+    alm = par2.get("projectStorageId", par2.get("storageId"))
+    token = par2.get("projectPathToken", par2.get("pathToken", ""))
+    marcas = [par2.get(k) for k in ("galleryTS", "projectTS", "timeStamp", "ts") if par2.get(k)]
+    print(f"  projectId={pid}  storageId={alm}  pathToken={token!r}  marcas={marcas}")
 
-    forma, html = buena
-    titulo(f"Variables de {forma}")
-    for m in re.finditer(r"\b(?:var|const|let)\s+(_?[A-Za-z_$][\w$]*)\s*=\s*([^;\n]{0,500})", html):
-        nombre, valor = m.group(1), m.group(2).strip()
-        if len(valor) > 15 or valor[:1] in "[{":
-            print(f"  {nombre} = {valor[:420]}")
+    dominios = []
+    if alm is not None and alm in mapa:
+        dominios.append(mapa[alm]["cdnDomain"])
+    dominios += [cdn_cuenta, mapa[0]["cdnDomain"]]
+
+    rutas = [f"/pictures/projectdata/{troceado(pid)}"]
+    if token:
+        rutas.append(f"/pictures/projectdata/{troceado(pid)}/{token}")
+    archivos = ["gallery.json.txt", "publicphotos.json.txt", "photos.json.txt"]
+
+    for dominio in dict.fromkeys(dominios):
+        for ruta in rutas:
+            for archivo in archivos:
+                for marca in (marcas + [None]):
+                    u = f"{dominio}{ruta}/{archivo}" + (f"?ts={marca}" if marca else "")
+                    try:
+                        estado, cab, d = traer(u)
+                    except urllib.error.HTTPError as e:
+                        if e.code != 404:
+                            print(f"  {e.code}  {u[:110]}")
+                        continue
+                    except Exception:  # noqa: BLE001
+                        continue
+                    print(f"\n  ENCONTRADA  {estado}  {u}")
+                    print(f"  {len(d)} bytes  [{cab.get('Content-Type')}]")
+                    texto = d.decode("utf-8", "replace")
+                    print("\n  Primeros 1500 caracteres:")
+                    print("  " + texto[:1500])
+                    try:
+                        datos_g = json.loads(texto)
+                        if isinstance(datos_g, list):
+                            print(f"\n  Estructura: lista de {len(datos_g)}")
+                    except Exception:  # noqa: BLE001
+                        pass
+                    return
+    print("\n  Ninguna funciono. Todas dieron 404.")
 
 
 if __name__ == "__main__":
