@@ -1,7 +1,9 @@
-"""Sonda: descifra el listado de fotos (gallery.json.txt).
+"""Sonda: confirma cuántos campos ocupa cada foto en el listado.
 
-Es JSON con nombres. Guarda los números de foto como diferencias contra
-`minId` para que el archivo pese menos, así que hay que sumarlos.
+La lista `photos` de cada escena son fichas seguidas, no identificadores
+sueltos. El primer campo de cada ficha es la diferencia contra `minId`.
+Esta sonda prueba varios anchos de ficha y se queda con el que haga que
+todas las miniaturas bajen.
 """
 
 import gzip
@@ -18,14 +20,16 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
 
 
-def traer(url):
+def traer(url, solo_estado=False):
     if url.startswith("//"):
         url = "https:" + url
     url = urllib.parse.quote(url, safe=":/?&=%#+.,~_-")
-    pedido = urllib.request.Request(url)
+    pedido = urllib.request.Request(url, method="HEAD" if solo_estado else "GET")
     pedido.add_header("User-Agent", UA)
     pedido.add_header("Accept", "*/*")
-    with urllib.request.urlopen(pedido, timeout=90) as resp:
+    with urllib.request.urlopen(pedido, timeout=60) as resp:
+        if solo_estado:
+            return resp.status, dict(resp.headers), b""
         crudo = resp.read()
         cod = resp.headers.get("Content-Encoding", "")
         if cod == "gzip":
@@ -39,12 +43,12 @@ def titulo(t):
     print("\n" + "=" * 62 + "\n" + t + "\n" + "=" * 62, flush=True)
 
 
-def resumir(valor, nivel=0):
-    if isinstance(valor, list):
-        return f"lista de {len(valor)}"
-    if isinstance(valor, dict):
-        return "objeto -> " + ", ".join(list(valor)[:14])
-    return repr(valor)[:90]
+def baja(url):
+    try:
+        estado, _, _ = traer(url, solo_estado=True)
+        return estado == 200
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def main():
@@ -70,50 +74,45 @@ def main():
     medio = pid // 1000 - alto * 1000
     ruta = f"{cdn}/pictures/{alto}/{medio}/{pid}/{token}"
 
-    titulo(f"«{carpeta[1]}»")
     _, _, d = traer(f"{ruta}/gallery.json.txt")
     g = json.loads(d.decode("utf-8", "replace"))
+    minimo = g["minId"]
+    escenas = [e for e in g.get("scenes", []) if e.get("photos")]
 
-    print("  Claves del listado:")
-    for clave, valor in g.items():
-        print(f"    {clave} = {resumir(valor)}")
+    titulo(f"«{carpeta[1]}» — {len(escenas)} escena(s)")
+    for e in escenas:
+        print(f"  {e.get('name') or '(sin nombre)'}: {len(e['photos'])} números")
 
-    titulo("La primera escena")
-    escenas = g.get("scenes") or []
-    if escenas:
-        for clave, valor in (escenas[0] or {}).items():
-            print(f"  {clave} = {resumir(valor)}")
+    titulo("Probando anchos de ficha")
+    fotos = escenas[0]["photos"]
+    mejor = None
+    for ancho in (4, 5, 6, 7, 8, 1):
+        if len(fotos) % ancho:
+            print(f"  ancho {ancho}: no divide ({len(fotos)} números) — descartado")
+            continue
+        ids = [minimo + fotos[i] for i in range(0, len(fotos), ancho)]
+        # Se prueban cinco repartidas a lo largo de la lista, no las primeras:
+        # un ancho equivocado suele acertar al principio y fallar más adelante.
+        paso = max(1, len(ids) // 5)
+        muestras = ids[::paso][:5]
+        aciertos = sum(1 for x in muestras if baja(f"{ruta}/thumbres/{x}.jpg"))
+        print(f"  ancho {ancho}: {len(ids)} fotos, {aciertos}/{len(muestras)} miniaturas OK")
+        if aciertos == len(muestras) and mejor is None:
+            mejor = (ancho, ids)
 
-    titulo("Listas de números dentro de las escenas")
-    minimo = g.get("minId", 0)
-    print(f"  minId = {minimo}")
-    for i, escena in enumerate(escenas[:2]):
-        for clave, valor in (escena or {}).items():
-            if isinstance(valor, list) and valor and all(isinstance(x, int) for x in valor):
-                print(f"  escena[{i}].{clave}: {len(valor)} números, "
-                      f"primeros {valor[:5]}  ->  sumando minId: "
-                      f"{[minimo + x for x in valor[:3]]}")
+    if not mejor:
+        titulo("Ningún ancho funcionó")
+        print("  primeros 30 números: " + str(fotos[:30]))
+        return
 
-    titulo("Comprobando que las fotos bajan")
-    probados = 0
-    for escena in escenas:
-        for clave, valor in (escena or {}).items():
-            if not (isinstance(valor, list) and valor and all(isinstance(x, int) for x in valor)):
-                continue
-            for x in valor[:2]:
-                for candidato in (minimo + x, x):
-                    u = f"{ruta}/thumbres/{candidato}.jpg"
-                    try:
-                        estado, cab, datos_f = traer(u)
-                        print(f"  OK {estado}  thumbres/{candidato}.jpg  "
-                              f"{len(datos_f)} bytes  [{cab.get('Content-Type')}]  (de {clave})")
-                    except urllib.error.HTTPError as e:
-                        print(f"  {e.code}  thumbres/{candidato}.jpg  (de {clave})")
-                    probados += 1
-                    if probados >= 10:
-                        return
-        if probados >= 10:
-            break
+    ancho, ids = mejor
+    titulo(f"Ancho correcto: {ancho} campos por foto")
+    print(f"  {len(ids)} fotos en esta escena")
+    print("  primeros ids: " + ", ".join(str(x) for x in ids[:6]))
+    total = sum(len(e["photos"]) // ancho for e in escenas)
+    print(f"  total en la carpeta: {total} fotos")
+    print(f"\n  Ejemplo de miniatura: {ruta}/thumbres/{ids[0]}.jpg")
+    print(f"  Ejemplo de mediana:   {ruta}/midres/{ids[0]}.jpg")
 
 
 if __name__ == "__main__":
