@@ -4,7 +4,7 @@ import argparse
 import subprocess
 import sys
 
-from . import ajustes, archivos, carpeta_local, imagenes, indice, vision
+from . import ajustes, archivos, fuentes, imagenes, indice, vision
 
 
 def _abrir_carpeta(ruta):
@@ -21,8 +21,8 @@ def _abrir_carpeta(ruta):
 
 
 def _carpetas_elegidas(datos, filtros):
-    """Las carpetas de fotos que hay que mirar, ya filtradas."""
-    carpetas = carpeta_local.listar_carpetas(datos)
+    """Las carpetas que hay que mirar, ya filtradas."""
+    carpetas = fuentes.listar_carpetas(datos)
     filtros = filtros or datos["carpetas"]
     if filtros:
         buscados = [indice.normalizar(f) for f in filtros]
@@ -34,27 +34,29 @@ def _carpetas_elegidas(datos, filtros):
 
 
 def _cmd_carpetas(args):
-    """Lista las carpetas con fotos, para saber cuáles indexar."""
+    """Lista las carpetas disponibles, sin filtrar."""
     datos = ajustes.cargar()
-    base = carpeta_local.raiz(datos)
-    if not base.is_dir():
-        print(f"No existe la carpeta {base}")
-        print('Pon la ruta correcta en la clave "carpeta_local" de buscafotos/ajustes.json')
-        return 1
-
-    carpetas = carpeta_local.listar_carpetas(datos)
+    print(f"Leyendo de {fuentes.descripcion(datos)}\n")
+    carpetas = fuentes.listar_carpetas(datos)
     if not carpetas:
-        print(f"No hay fotos dentro de {base}")
+        print("No se encontró ninguna carpeta.")
         return 1
 
-    total = sum(c["cantidad"] for c in carpetas)
-    print(f"{len(carpetas)} carpeta(s) con {total} foto(s) en {base}:\n")
+    filtros = [indice.normalizar(f) for f in datos["carpetas"]]
     for numero, carpeta in enumerate(carpetas, 1):
-        print(f"  {numero:>3}. {carpeta['nombre']}  ({carpeta['cantidad']} fotos)")
-    print(
-        '\nPara indexar solo algunas, pon parte de su nombre en la clave '
-        '"carpetas" de buscafotos/ajustes.json'
-    )
+        elegida = not filtros or any(f in indice.normalizar(carpeta["nombre"]) for f in filtros)
+        marca = "*" if elegida else " "
+        cuantas = carpeta.get("cantidad")
+        detalle = f"  ({cuantas} fotos)" if cuantas else ""
+        print(f" {marca} {numero:>3}. {carpeta['nombre']}{detalle}")
+
+    if filtros:
+        cuantas = sum(
+            1 for c in carpetas
+            if any(f in indice.normalizar(c["nombre"]) for f in filtros)
+        )
+        print(f"\n* = se indexa ({cuantas} de {len(carpetas)}). "
+              'El filtro está en la clave "carpetas" de buscafotos/ajustes.json')
     return 0
 
 
@@ -68,29 +70,34 @@ def _cmd_indexar(args):
 
     guardado = indice.cargar()
     guardado.setdefault("fotos", [])
-    guardado["origen"] = str(carpeta_local.raiz(datos))
+    guardado["origen"] = fuentes.descripcion(datos)
     ya_vistas = {f["id"] for f in guardado["fotos"]}
 
     pendientes = []
     for carpeta in carpetas:
-        for foto in carpeta_local.listar_fotos(datos, carpeta):
-            if foto["id"] not in ya_vistas:
-                pendientes.append(foto)
+        print(f"Leyendo «{carpeta['nombre']}»…", flush=True)
+        try:
+            for foto in fuentes.listar_fotos(datos, carpeta):
+                if foto["id"] not in ya_vistas:
+                    pendientes.append(foto)
+        except fuentes.ErrorFuente as e:
+            print(f"  ✗ {e}")
 
     if args.limite:
         pendientes = pendientes[: args.limite]
 
     if not pendientes:
-        print("No hay fotos nuevas: el índice ya está al día.")
+        print("\nNo hay fotos nuevas: el índice ya está al día.")
         return 0
 
-    print(f"{len(pendientes)} foto(s) por mirar. Esto tarda un rato.\n")
-    fallos_seguidos = 0
-    fallos = 0
+    print(f"\n{len(pendientes)} foto(s) por mirar. Esto tarda un rato.")
+    print(f"Costo aproximado: {len(pendientes) / 1000:.2f} dólares.\n")
+
+    fallos = fallos_seguidos = 0
     for numero, foto in enumerate(pendientes, 1):
         etiqueta = f"[{numero}/{len(pendientes)}]"
         try:
-            contenido, tipo = imagenes.preparar(foto["archivo"])
+            contenido, tipo = imagenes.preparar(foto)
             ficha = vision.describir(contenido, tipo=tipo, modelo=datos["modelo"])
         except (imagenes.ErrorImagen, vision.ErrorVision) as e:
             fallos += 1
@@ -121,7 +128,7 @@ def _cmd_indexar(args):
 
 
 def _cmd_buscar(args):
-    """Busca en el índice y copia las fotos que mejor encajan."""
+    """Busca en el índice y trae las fotos que mejor encajan."""
     datos = ajustes.cargar()
     consulta = " ".join(args.consulta)
     cuantas = args.cuantas or datos["cuantas"]
@@ -145,15 +152,15 @@ def _cmd_buscar(args):
 
     for puesto, (punto, foto) in enumerate(resultados, 1):
         print(f"  {puesto}. [{punto:.0%}] {foto['descripcion'][:80]}")
-        print(f"      {foto['carpeta']} · {foto['id']}")
+        print(f"      {foto['carpeta']}")
         if destino is None:
             continue
         nombre = archivos.nombre_seguro(f"{puesto:02d}-{consulta}")
         try:
-            copia = archivos.copiar(foto["archivo"], destino, nombre)
-            print(f"      → {copia.name}")
-        except OSError as e:
-            print(f"      ✗ no se pudo copiar: {e}")
+            entregada = archivos.entregar(foto, destino, nombre)
+            print(f"      → {entregada.name}")
+        except archivos.ErrorEntrega as e:
+            print(f"      ✗ {e}")
 
     if destino is not None:
         print(f"\nGuardadas en: {destino}")
@@ -168,7 +175,7 @@ def construir_parser():
     )
     sub = parser.add_subparsers(dest="comando", required=True)
 
-    p = sub.add_parser("carpetas", help="lista las carpetas con fotos")
+    p = sub.add_parser("carpetas", help="lista las carpetas de la galería")
     p.set_defaults(func=_cmd_carpetas)
 
     p = sub.add_parser("indexar", help="mira las fotos y anota qué se ve en cada una")
@@ -176,10 +183,10 @@ def construir_parser():
     p.add_argument("--limite", type=int, help="parar después de esta cantidad de fotos")
     p.set_defaults(func=_cmd_indexar)
 
-    p = sub.add_parser("buscar", help="busca fotos y las copia a tu carpeta de trabajo")
+    p = sub.add_parser("buscar", help="busca fotos y te las trae")
     p.add_argument("consulta", nargs="+", help="qué buscas, por ejemplo: antorcha")
     p.add_argument("-n", "--cuantas", type=int, help="cuántas fotos quieres")
-    p.add_argument("--solo-mirar", action="store_true", help="enseñar los resultados sin copiarlos")
+    p.add_argument("--solo-mirar", action="store_true", help="enseñar los resultados sin traerlos")
     p.set_defaults(func=_cmd_buscar)
 
     return parser
@@ -189,6 +196,9 @@ def main(argv=None):
     args = construir_parser().parse_args(argv)
     try:
         return args.func(args)
+    except fuentes.ErrorFuente as e:
+        print(f"No se pudo leer la galería.\n  {e}")
+        return 1
     except KeyboardInterrupt:
         print("\nCancelado. Lo indexado hasta ahora quedó guardado.")
         return 130

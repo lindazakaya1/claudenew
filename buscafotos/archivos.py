@@ -1,9 +1,15 @@
-"""Copiar las fotos encontradas a la carpeta de resultados."""
+"""Dejar las fotos encontradas en la carpeta de resultados."""
 
 import re
 import shutil
 import unicodedata
 from pathlib import Path
+
+from . import pictime
+
+
+class ErrorEntrega(Exception):
+    """La foto no se pudo dejar en la carpeta."""
 
 
 def nombre_seguro(texto, maximo=60):
@@ -14,19 +20,32 @@ def nombre_seguro(texto, maximo=60):
     return (texto or "foto")[:maximo]
 
 
-def copiar(origen, carpeta, nombre):
-    """Copia una foto a `carpeta` con el nombre dado, sin pisar nada.
-
-    Si ya hay un archivo con ese nombre le añade un número, para no borrar
-    el resultado de una búsqueda anterior.
-    """
-    origen = Path(origen)
-    destino = carpeta / f"{nombre}{origen.suffix.lower()}"
+def _sin_pisar(carpeta, nombre, extension):
+    """Un nombre libre, para no borrar el resultado de otra búsqueda."""
+    destino = carpeta / f"{nombre}{extension}"
     contador = 2
     while destino.exists():
-        destino = carpeta / f"{nombre}-{contador}{origen.suffix.lower()}"
+        destino = carpeta / f"{nombre}-{contador}{extension}"
         contador += 1
+    return destino
 
-    # copy2 conserva la fecha del archivo original, útil para ordenar después.
-    shutil.copy2(origen, destino)
+
+def entregar(foto, carpeta, nombre):
+    """Deja una foto en `carpeta`: la copia del disco o la baja de la web."""
+    if foto.get("archivo"):
+        origen = Path(foto["archivo"])
+        destino = _sin_pisar(carpeta, nombre, origen.suffix.lower())
+        try:
+            # copy2 conserva la fecha original, útil para ordenar después.
+            shutil.copy2(origen, destino)
+        except OSError as e:
+            raise ErrorEntrega(f"no se pudo copiar: {e}") from e
+        return destino
+
+    try:
+        datos, _ = pictime.bajar(foto["url"])
+    except pictime.ErrorGaleria as e:
+        raise ErrorEntrega(str(e)) from e
+    destino = _sin_pisar(carpeta, nombre, ".jpg")
+    destino.write_bytes(datos)
     return destino

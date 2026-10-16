@@ -1,20 +1,48 @@
-name: Sonda de la galería
+name: Probar el buscador contra la galería
 
-# Temporal: corre buscafotos/sonda.py desde un servidor de GitHub, que sí
-# alcanza pic-time.com, para averiguar cómo pide la galería sus datos.
+# Temporal: comprueba desde un servidor de GitHub (que sí alcanza
+# pic-time.com) que el lector de la galería funciona de verdad.
 
 on:
   workflow_dispatch:
   push:
     branches: [claude/web-photo-search-repbcg]
-    paths: [buscafotos/sonda.py]
+    paths: [buscafotos/pictime.py, .github/workflows/sonda.yml]
 
 jobs:
-  sondear:
+  probar:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python buscafotos/sonda.py "https://macabeadaspty.pic-time.com"
+
+      - name: Pruebas sin internet
+        run: python -m unittest discover -s tests
+
+      - name: Listar las carpetas de la galería real
+        run: python -m buscafotos carpetas
+
+      - name: Leer las fotos de una carpeta y bajar una
+        run: |
+          python - <<'PY'
+          from buscafotos import ajustes, fuentes, imagenes
+          datos = ajustes.cargar()
+          carpetas = [c for c in fuentes.listar_carpetas(datos)
+                      if "Juveniles" in c["nombre"]]
+          print(f"{len(carpetas)} carpetas juveniles")
+          total = 0
+          for carpeta in carpetas:
+              fotos = fuentes.listar_fotos(datos, carpeta)
+              total += len(fotos)
+              print(f"  {len(fotos):>5}  {carpeta['nombre']}")
+          print(f"\n{total} fotos en total")
+
+          foto = fuentes.listar_fotos(datos, carpetas[0])[0]
+          print(f"\nBajando {foto['url']}")
+          contenido, tipo = imagenes.preparar(foto)
+          print(f"  {len(contenido)} bytes, {tipo}")
+          assert contenido[:2] == b"\xff\xd8", "no es un JPEG"
+          print("  es un JPEG de verdad")
+          PY
