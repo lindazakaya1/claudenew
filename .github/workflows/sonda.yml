@@ -27,24 +27,33 @@ jobs:
       - name: Listar las carpetas de la galería real
         run: python -m buscafotos carpetas
 
-      - name: Leer las fotos de una carpeta y bajar una
+      - name: Leer las fotos de cada carpeta juvenil
         run: |
           python - <<'PY'
           from buscafotos import ajustes, fuentes, imagenes
+
           datos = ajustes.cargar()
           carpetas = [c for c in fuentes.listar_carpetas(datos)
                       if "Juveniles" in c["nombre"]]
-          print(f"{len(carpetas)} carpetas juveniles")
-          total = 0
-          for carpeta in carpetas:
-              fotos = fuentes.listar_fotos(datos, carpeta)
-              total += len(fotos)
-              print(f"  {len(fotos):>5}  {carpeta['nombre']}")
-          print(f"\n{total} fotos en total")
+          print(f"{len(carpetas)} carpetas juveniles\n")
 
-          foto = fuentes.listar_fotos(datos, carpetas[0])[0]
-          print(f"\nBajando {foto['url']}")
-          contenido, tipo = imagenes.preparar(foto)
+          total, buenas, primera = 0, [], None
+          for carpeta in carpetas:
+              try:
+                  fotos = fuentes.listar_fotos(datos, carpeta)
+              except fuentes.ErrorFuente as e:
+                  print(f"  fallo  {carpeta['nombre']}\n           {e}")
+                  continue
+              total += len(fotos)
+              buenas.append(carpeta)
+              primera = primera or (fotos[0] if fotos else None)
+              print(f"  {len(fotos):>5}  {carpeta['nombre']}")
+
+          print(f"\n{len(buenas)} de {len(carpetas)} carpetas leídas, {total} fotos")
+
+          assert primera, "ninguna carpeta devolvió fotos"
+          print(f"\nBajando {primera['url']}")
+          contenido, tipo = imagenes.preparar(primera)
           print(f"  {len(contenido)} bytes, {tipo}")
           assert contenido[:2] == b"\xff\xd8", "no es un JPEG"
           print("  es un JPEG de verdad")
