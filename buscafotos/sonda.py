@@ -1,11 +1,11 @@
-"""Sonda final: abre una carpeta de la galería con un navegador de verdad
-y anota todas las direcciones que pide.
+"""Sonda: lee el listado de fotos de una carpeta y comprueba que bajan.
 
-Las sondas anteriores dedujeron las direcciones leyendo el código del sitio,
-y así se resolvieron el portafolio y las carpetas. Para las fotos esa vía se
-agotó: la ruta sale de un campo (`relativePath`) que no se calcula, viene
-guardado. En vez de seguir adivinando, aquí se deja que el propio JavaScript
-de Pic-Time pida lo que tenga que pedir y se mira qué pidió.
+La ruta de un proyecto quedó resuelta observando qué pide el navegador:
+
+    /pictures/{id//1e6}/{(id//1e3)%1e3}/{id}/{pathToken}
+
+sin ninguna carpeta intermedia. Dentro están gallery.json.txt con el
+listado y thumbres/ midres/ lowres/ con las fotos.
 """
 
 import gzip
@@ -13,6 +13,7 @@ import io
 import json
 import re
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
@@ -42,8 +43,14 @@ def titulo(t):
     print("\n" + "=" * 62 + "\n" + t + "\n" + "=" * 62, flush=True)
 
 
-def carpeta_juvenil(base):
-    """La ruta de la primera carpeta de las Macabeadas Juveniles."""
+def ruta_de_proyecto(identificador, token):
+    alto = identificador // 1_000_000
+    medio = identificador // 1000 - alto * 1000
+    return f"/pictures/{alto}/{medio}/{identificador}/{token}"
+
+
+def main():
+    base = (sys.argv[1] if len(sys.argv) > 1 else "https://macabeadaspty.pic-time.com").rstrip("/")
     _, _, cuerpo = traer(base + "/portfolio")
     pagina = cuerpo.decode("utf-8", "replace")
     par = json.loads(re.search(r"var initParams = (\{.*?\});", pagina, re.S).group(1))
@@ -55,52 +62,65 @@ def carpeta_juvenil(base):
            f"/portfolio.json.txt?ts={par['portfolioTS']}")
     _, _, datos = traer(url)
     proyectos = json.loads(datos.decode("utf-8", "replace"))[1][3]
-    return next(p[1] for p in proyectos if "Juveniles" in p[1][1])
+    carpeta = next(p[1] for p in proyectos if "Juveniles" in p[1][1])
 
+    titulo(f"Carpeta «{carpeta[1]}»")
+    _, _, c = traer(f"{base}/-{carpeta[2]}")
+    par2 = json.loads(re.search(r"initParams = (\{.*?\});", c.decode("utf-8", "replace"), re.S).group(1))
+    pid, alm = par2["projectId"], par2["projectStorageId"]
+    token = par2["projectPathToken"]
+    cdn = mapa[alm]["cdnDomain"]
+    ruta = ruta_de_proyecto(pid, token)
+    print(f"  {cdn}{ruta}")
 
-def main():
-    base = (sys.argv[1] if len(sys.argv) > 1 else "https://macabeadaspty.pic-time.com").rstrip("/")
-    carpeta = carpeta_juvenil(base)
-    destino = f"{base}/-{carpeta[2]}"
-    titulo(f"Abriendo «{carpeta[1]}» con el navegador")
-    print("  " + destino)
+    estado, cab, d = traer(f"{cdn}{ruta}/gallery.json.txt")
+    print(f"  gallery.json.txt -> {estado}, {len(d)} bytes")
+    galeria = json.loads(d.decode("utf-8", "replace"))
 
-    from playwright.sync_api import sync_playwright
+    titulo("Forma del listado")
 
-    pedidos = []
-    with sync_playwright() as p:
-        navegador = p.chromium.launch(args=["--no-sandbox"])
-        pestana = navegador.new_page(user_agent=UA)
-        pestana.on("request", lambda r: pedidos.append(r.url))
-        pestana.goto(destino, wait_until="networkidle", timeout=90000)
-        # Un empujón de scroll: las galerías cargan las miniaturas al verlas.
-        for _ in range(3):
-            pestana.mouse.wheel(0, 3000)
-            pestana.wait_for_timeout(1500)
-        navegador.close()
+    def forma(nodo, nombre="raiz", nivel=0, tope=6):
+        sangria = "  " * nivel
+        if isinstance(nodo, list):
+            print(f"  {sangria}{nombre}: lista de {len(nodo)}")
+            if nivel < tope:
+                for i, hijo in enumerate(nodo[:3]):
+                    forma(hijo, f"[{i}]", nivel + 1, tope)
+        elif isinstance(nodo, dict):
+            print(f"  {sangria}{nombre}: objeto -> " + ", ".join(list(nodo)[:10]))
+        elif isinstance(nodo, str) and nodo:
+            print(f"  {sangria}{nombre}: TEXTO {nodo[:50]!r}")
+        elif isinstance(nodo, (int, float)) and nodo:
+            print(f"  {sangria}{nombre}: {nodo}")
 
-    print(f"\n  {len(pedidos)} peticiones en total")
+    forma(galeria)
 
-    def unicos(filtro, tope):
-        vistos = []
-        for u in pedidos:
-            if filtro(u) and u not in vistos:
-                vistos.append(u)
-            if len(vistos) >= tope:
-                break
-        return vistos
+    # Los nombres de archivo de las fotos son números largos; se recogen
+    # todos los que aparezcan en el listado y se comprueba que bajan.
+    titulo("Identificadores de foto encontrados")
+    encontrados = []
 
-    titulo("Datos de la galería (.json / .txt)")
-    for u in unicos(lambda u: (".json" in u or ".txt" in u) and "scripts" not in u, 12):
-        print("  " + u[:220])
+    def recoger(nodo):
+        if isinstance(nodo, list):
+            for hijo in nodo:
+                recoger(hijo)
+        elif isinstance(nodo, int) and 10_000_000_000 <= nodo <= 99_999_999_999:
+            encontrados.append(nodo)
 
-    titulo("Fotos (thumbs / midres / lowres / smallres)")
-    for u in unicos(lambda u: any(r in u for r in ("/thumbs/", "/midres/", "/lowres/", "/smallres/", "/thumbres/")), 8):
-        print("  " + u[:220])
+    recoger(galeria)
+    unicos = list(dict.fromkeys(encontrados))
+    print(f"  {len(unicos)} identificadores (de {len(encontrados)} apariciones)")
+    print("  primeros: " + ", ".join(str(x) for x in unicos[:8]))
 
-    titulo("Cualquier imagen de un CDN")
-    for u in unicos(lambda u: re.search(r"\.(jpe?g|png|webp)(\?|$)", u, re.I) and "scripts" not in u and "skins" not in u, 10):
-        print("  " + u[:220])
+    titulo("Comprobando que las fotos bajan")
+    for ident in unicos[:3]:
+        for tamano in ("thumbres", "midres"):
+            u = f"{cdn}{ruta}/{tamano}/{ident}.jpg"
+            try:
+                estado, cab, d = traer(u)
+                print(f"  {estado}  {tamano}/{ident}.jpg  {len(d)} bytes  [{cab.get('Content-Type')}]")
+            except urllib.error.HTTPError as e:
+                print(f"  {e.code}  {tamano}/{ident}.jpg")
 
 
 if __name__ == "__main__":
