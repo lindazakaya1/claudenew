@@ -198,6 +198,8 @@ class PruebaPicTime(unittest.TestCase):
 
     def setUp(self):
         self.pedidos = []
+        # Tamaños que esta galería de mentira no tiene.
+        self.faltantes = ()
         self._traer = pictime._traer
 
         def traer_simulado(url, que=""):
@@ -211,6 +213,8 @@ class PruebaPicTime(unittest.TestCase):
             if "gallery.json.txt" in url:
                 return self.LISTADO.encode()
             if url.endswith(".jpg"):
+                if any(f"/{t}/" in url for t in self.faltantes):
+                    raise pictime.ErrorGaleria(f"HTTP 404 al pedir {url}")
                 return JPEG
             raise pictime.ErrorGaleria(f"no simulado: {url}")
 
@@ -238,6 +242,25 @@ class PruebaPicTime(unittest.TestCase):
         self.assertEqual(
             fotos[0]["url"],
             "https://proyecto.ejemplo/pictures/50/350/50350259/tok123/midres/11626743758.jpg")
+
+    def test_baja_de_tamano_cuando_el_grande_no_existe(self):
+        # La galería real solo sirve thumbres: midres y los demás dan 404.
+        self.faltantes = ("midres", "lowres", "smallres", "thumbs")
+        carpetas = pictime.listar_carpetas("https://ejemplo.pic-time.com")
+        fotos = pictime.listar_fotos("https://ejemplo.pic-time.com", carpetas[0])
+        self.assertEqual(fotos[0]["tamano"], "thumbres")
+        self.assertIn("/thumbres/", fotos[0]["url"])
+
+    def test_sin_ningun_tamano_avisa_claro(self):
+        self.faltantes = pictime.TAMANOS
+        carpetas = pictime.listar_carpetas("https://ejemplo.pic-time.com")
+        with self.assertRaises(pictime.ErrorGaleria) as caja:
+            pictime.listar_fotos("https://ejemplo.pic-time.com", carpetas[0])
+        self.assertIn("ningún tamaño", str(caja.exception))
+
+    def test_siempre_trae_la_miniatura(self):
+        carpetas = pictime.listar_carpetas("https://ejemplo.pic-time.com")
+        fotos = pictime.listar_fotos("https://ejemplo.pic-time.com", carpetas[0])
         self.assertEqual(
             fotos[0]["url_thumb"],
             "https://proyecto.ejemplo/pictures/50/350/50350259/tok123/thumbres/11626743758.jpg")

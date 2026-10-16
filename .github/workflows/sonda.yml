@@ -52,7 +52,8 @@ jobs:
           print(f"\n{len(buenas)} de {len(carpetas)} carpetas leídas, {total} fotos")
 
           assert primera, "ninguna carpeta devolvió fotos"
-          print(f"\nBajando {primera['url']}")
+          print(f"\nTamaño elegido: {primera['tamano']}")
+          print(f"Bajando {primera['url']}")
           contenido, tipo = imagenes.preparar(primera)
           print(f"  {len(contenido)} bytes, {tipo}")
           assert contenido[:2] == b"\xff\xd8", "no es un JPEG"

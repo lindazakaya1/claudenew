@@ -38,8 +38,9 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 # Cada foto ocupa cinco números seguidos en la lista de una escena.
 CAMPOS_POR_FOTO = 5
 
-# Tamaños que sirve Pic-Time, de menor a mayor.
-TAMANOS = ("thumbres", "thumbs", "smallres", "lowres", "midres")
+# Tamaños que Pic-Time puede servir, del más grande al más pequeño. No todas
+# las galerías tienen todos: se prueba cuál existe en vez de suponerlo.
+TAMANOS = ("midres", "lowres", "smallres", "thumbs", "thumbres")
 
 
 class ErrorGaleria(Exception):
@@ -143,13 +144,30 @@ def _datos_de_carpeta(sesion, carpeta):
     return ruta
 
 
-def listar_fotos(galeria, carpeta, tamano="midres"):
+def _mejor_tamano(ruta, identificador):
+    """El tamaño más grande que esta carpeta sirve de verdad.
+
+    Se comprueba con una foto: lo que exista para ella existe para todas,
+    porque Pic-Time genera los tamaños por galería, no por foto.
+    """
+    for tamano in TAMANOS:
+        try:
+            _traer(f"{ruta}/{tamano}/{identificador}.jpg")
+            return tamano
+        except ErrorGaleria:
+            continue
+    raise ErrorGaleria(
+        f"ningún tamaño conocido existe para la foto {identificador}. "
+        f"Se probaron: {', '.join(TAMANOS)}")
+
+
+def listar_fotos(galeria, carpeta, tamano=None):
     """Las fotos de una carpeta, con la dirección de cada una.
 
-    `midres` es el tamaño más grande que la galería sirve sin pasar por su
-    propio flujo de descarga, y alcanza tanto para que Claude vea qué hay en
-    la foto como para maquetar. La resolución completa se baja desde
-    Pic-Time, y para eso cada foto trae la dirección de su carpeta.
+    Si no se dice un tamaño, se usa el más grande que la carpeta sirva sin
+    pasar por el flujo de descarga de Pic-Time. La resolución completa se
+    baja desde el sitio, y para eso cada foto trae la dirección de su
+    carpeta en la clave `pagina`.
     """
     sesion = abrir(galeria) if isinstance(galeria, str) else galeria
     ruta = _datos_de_carpeta(sesion, carpeta)
@@ -160,7 +178,7 @@ def listar_fotos(galeria, carpeta, tamano="midres"):
     if minimo is None:
         raise ErrorGaleria(f"«{carpeta['nombre']}»: el listado no trae minId")
 
-    fotos, vistas = [], set()
+    identificadores, vistas = [], set()
     for escena in listado.get("scenes") or []:
         numeros = (escena or {}).get("photos") or []
         # Se recorre de cinco en cinco: el primero de cada ficha es el que
@@ -171,15 +189,24 @@ def listar_fotos(galeria, carpeta, tamano="midres"):
             if identificador in vistas:
                 continue
             vistas.add(identificador)
-            fotos.append({
-                "id": f"{carpeta['ruta']}/{identificador}",
-                "carpeta": carpeta["nombre"],
-                "foto": identificador,
-                "url": f"{ruta}/{tamano}/{identificador}.jpg",
-                "url_thumb": f"{ruta}/thumbres/{identificador}.jpg",
-                "pagina": f"{sesion['base']}/-{carpeta['ruta']}",
-            })
-    return fotos
+            identificadores.append(identificador)
+
+    if not identificadores:
+        return []
+
+    tamano = tamano or _mejor_tamano(ruta, identificadores[0])
+    return [
+        {
+            "id": f"{carpeta['ruta']}/{identificador}",
+            "carpeta": carpeta["nombre"],
+            "foto": identificador,
+            "tamano": tamano,
+            "url": f"{ruta}/{tamano}/{identificador}.jpg",
+            "url_thumb": f"{ruta}/thumbres/{identificador}.jpg",
+            "pagina": f"{sesion['base']}/-{carpeta['ruta']}",
+        }
+        for identificador in identificadores
+    ]
 
 
 def bajar(url):
