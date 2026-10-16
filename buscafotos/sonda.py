@@ -1,11 +1,7 @@
-"""Sonda: lee el listado de fotos de una carpeta y comprueba que bajan.
+"""Sonda: descifra el listado de fotos (gallery.json.txt).
 
-La ruta de un proyecto quedó resuelta observando qué pide el navegador:
-
-    /pictures/{id//1e6}/{(id//1e3)%1e3}/{id}/{pathToken}
-
-sin ninguna carpeta intermedia. Dentro están gallery.json.txt con el
-listado y thumbres/ midres/ lowres/ con las fotos.
+Es JSON con nombres. Guarda los números de foto como diferencias contra
+`minId` para que el archivo pese menos, así que hay que sumarlos.
 """
 
 import gzip
@@ -43,10 +39,12 @@ def titulo(t):
     print("\n" + "=" * 62 + "\n" + t + "\n" + "=" * 62, flush=True)
 
 
-def ruta_de_proyecto(identificador, token):
-    alto = identificador // 1_000_000
-    medio = identificador // 1000 - alto * 1000
-    return f"/pictures/{alto}/{medio}/{identificador}/{token}"
+def resumir(valor, nivel=0):
+    if isinstance(valor, list):
+        return f"lista de {len(valor)}"
+    if isinstance(valor, dict):
+        return "objeto -> " + ", ".join(list(valor)[:14])
+    return repr(valor)[:90]
 
 
 def main():
@@ -64,63 +62,58 @@ def main():
     proyectos = json.loads(datos.decode("utf-8", "replace"))[1][3]
     carpeta = next(p[1] for p in proyectos if "Juveniles" in p[1][1])
 
-    titulo(f"Carpeta «{carpeta[1]}»")
     _, _, c = traer(f"{base}/-{carpeta[2]}")
     par2 = json.loads(re.search(r"initParams = (\{.*?\});", c.decode("utf-8", "replace"), re.S).group(1))
-    pid, alm = par2["projectId"], par2["projectStorageId"]
-    token = par2["projectPathToken"]
-    cdn = mapa[alm]["cdnDomain"]
-    ruta = ruta_de_proyecto(pid, token)
-    print(f"  {cdn}{ruta}")
+    pid, token = par2["projectId"], par2["projectPathToken"]
+    cdn = mapa[par2["projectStorageId"]]["cdnDomain"]
+    alto = pid // 1_000_000
+    medio = pid // 1000 - alto * 1000
+    ruta = f"{cdn}/pictures/{alto}/{medio}/{pid}/{token}"
 
-    estado, cab, d = traer(f"{cdn}{ruta}/gallery.json.txt")
-    print(f"  gallery.json.txt -> {estado}, {len(d)} bytes")
-    galeria = json.loads(d.decode("utf-8", "replace"))
+    titulo(f"«{carpeta[1]}»")
+    _, _, d = traer(f"{ruta}/gallery.json.txt")
+    g = json.loads(d.decode("utf-8", "replace"))
 
-    titulo("Forma del listado")
+    print("  Claves del listado:")
+    for clave, valor in g.items():
+        print(f"    {clave} = {resumir(valor)}")
 
-    def forma(nodo, nombre="raiz", nivel=0, tope=6):
-        sangria = "  " * nivel
-        if isinstance(nodo, list):
-            print(f"  {sangria}{nombre}: lista de {len(nodo)}")
-            if nivel < tope:
-                for i, hijo in enumerate(nodo[:3]):
-                    forma(hijo, f"[{i}]", nivel + 1, tope)
-        elif isinstance(nodo, dict):
-            print(f"  {sangria}{nombre}: objeto -> " + ", ".join(list(nodo)[:10]))
-        elif isinstance(nodo, str) and nodo:
-            print(f"  {sangria}{nombre}: TEXTO {nodo[:50]!r}")
-        elif isinstance(nodo, (int, float)) and nodo:
-            print(f"  {sangria}{nombre}: {nodo}")
+    titulo("La primera escena")
+    escenas = g.get("scenes") or []
+    if escenas:
+        for clave, valor in (escenas[0] or {}).items():
+            print(f"  {clave} = {resumir(valor)}")
 
-    forma(galeria)
-
-    # Los nombres de archivo de las fotos son números largos; se recogen
-    # todos los que aparezcan en el listado y se comprueba que bajan.
-    titulo("Identificadores de foto encontrados")
-    encontrados = []
-
-    def recoger(nodo):
-        if isinstance(nodo, list):
-            for hijo in nodo:
-                recoger(hijo)
-        elif isinstance(nodo, int) and 10_000_000_000 <= nodo <= 99_999_999_999:
-            encontrados.append(nodo)
-
-    recoger(galeria)
-    unicos = list(dict.fromkeys(encontrados))
-    print(f"  {len(unicos)} identificadores (de {len(encontrados)} apariciones)")
-    print("  primeros: " + ", ".join(str(x) for x in unicos[:8]))
+    titulo("Listas de números dentro de las escenas")
+    minimo = g.get("minId", 0)
+    print(f"  minId = {minimo}")
+    for i, escena in enumerate(escenas[:2]):
+        for clave, valor in (escena or {}).items():
+            if isinstance(valor, list) and valor and all(isinstance(x, int) for x in valor):
+                print(f"  escena[{i}].{clave}: {len(valor)} números, "
+                      f"primeros {valor[:5]}  ->  sumando minId: "
+                      f"{[minimo + x for x in valor[:3]]}")
 
     titulo("Comprobando que las fotos bajan")
-    for ident in unicos[:3]:
-        for tamano in ("thumbres", "midres"):
-            u = f"{cdn}{ruta}/{tamano}/{ident}.jpg"
-            try:
-                estado, cab, d = traer(u)
-                print(f"  {estado}  {tamano}/{ident}.jpg  {len(d)} bytes  [{cab.get('Content-Type')}]")
-            except urllib.error.HTTPError as e:
-                print(f"  {e.code}  {tamano}/{ident}.jpg")
+    probados = 0
+    for escena in escenas:
+        for clave, valor in (escena or {}).items():
+            if not (isinstance(valor, list) and valor and all(isinstance(x, int) for x in valor)):
+                continue
+            for x in valor[:2]:
+                for candidato in (minimo + x, x):
+                    u = f"{ruta}/thumbres/{candidato}.jpg"
+                    try:
+                        estado, cab, datos_f = traer(u)
+                        print(f"  OK {estado}  thumbres/{candidato}.jpg  "
+                              f"{len(datos_f)} bytes  [{cab.get('Content-Type')}]  (de {clave})")
+                    except urllib.error.HTTPError as e:
+                        print(f"  {e.code}  thumbres/{candidato}.jpg  (de {clave})")
+                    probados += 1
+                    if probados >= 10:
+                        return
+        if probados >= 10:
+            break
 
 
 if __name__ == "__main__":
