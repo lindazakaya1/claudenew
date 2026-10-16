@@ -178,6 +178,9 @@ python -m unittest discover -s tests
 
 En la carpeta `buscafotos/` hay algo distinto y sin relación con Instagram:
 un buscador de fotos por lo que se ve en ellas. Le pides «antorcha» o «niño
-sonriendo» y te copia esas fotos a una carpeta de tu computadora.
+sonriendo» y te trae esas fotos a una carpeta de tu computadora.
+
+Lee la galería de Pic-Time directamente de la web: 26.147 fotos de las VIII
+Macabeadas Juveniles, sin bajar nada a mano.
 
 Las instrucciones están en [`buscafotos/README.md`](buscafotos/README.md).

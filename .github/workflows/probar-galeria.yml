@@ -1,13 +1,14 @@
 name: Probar el buscador contra la galería
 
-# Temporal: comprueba desde un servidor de GitHub (que sí alcanza
-# pic-time.com) que el lector de la galería funciona de verdad.
+# Comprueba desde un servidor de GitHub (que alcanza pic-time.com) que el
+# lector de la galería sigue funcionando. Útil cuando el buscador deje de
+# encontrar fotos: dice en qué paso se rompió.
+#
+# Se lanza a mano desde la pestaña Actions. No corre solo, para no gastar
+# minutos ni pedirle nada a la galería sin motivo.
 
 on:
   workflow_dispatch:
-  push:
-    branches: [claude/web-photo-search-repbcg]
-    paths: [buscafotos/pictime.py, .github/workflows/sonda.yml]
 
 jobs:
   probar:
